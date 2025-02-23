@@ -1,0 +1,142 @@
+data class Workout(
+    val id: Int,
+    val title: String,
+    val duration: Int,
+    val difficulty: String,
+    val exercises: List<Exercise>
+)
+
+data class Exercise(
+    val id: Int,
+    val name: String,
+    val description: String,
+    val duration: Int
+)
+
+// Репозиторий (заглушка с тестовыми данными)
+object WorkoutRepository {
+    fun getWorkouts(): List<Workout> = listOf(
+        Workout(
+            1, 
+            "Утренняя зарядка",
+            15,
+            "Начинающий",
+            listOf(
+                Exercise(1, "Отжимания", "3 подхода по 10 раз", 30),
+                Exercise(2, "Приседания", "3 подхода по 15 раз", 45),
+                Exercise(3, "Планка", "Удержание 1 минута", 60)
+            )
+        )
+    )
+}
+
+// MainActivity.kt - список тренировок
+class MainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityMainBinding
+    private val adapter = WorkoutAdapter()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        adapter.submitList(WorkoutRepository.getWorkouts())
+        binding.workoutList.adapter = adapter
+    }
+}
+
+// WorkoutAdapter.kt - адаптер для RecyclerView
+class WorkoutAdapter : ListAdapter<Workout, WorkoutAdapter.ViewHolder>(DiffCallback()) {
+
+    inner class ViewHolder(private val binding: WorkoutItemBinding) : 
+        RecyclerView.ViewHolder(binding.root) {
+            
+        fun bind(workout: Workout) {
+            binding.title.text = workout.title
+            binding.duration.text = "${workout.duration} мин"
+            binding.root.setOnClickListener {
+                val intent = Intent(binding.root.context, WorkoutDetailActivity::class.java).apply {
+                    putExtra("WORKOUT_ID", workout.id)
+                }
+                binding.root.context.startActivity(intent)
+            }
+        }
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val binding = WorkoutItemBinding.inflate(
+            LayoutInflater.from(parent.context), parent, false)
+        return ViewHolder(binding)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        holder.bind(getItem(position))
+    }
+
+    class DiffCallback : DiffUtil.ItemCallback<Workout>() {
+        override fun areItemsTheSame(oldItem: Workout, newItem: Workout) = 
+            oldItem.id == newItem.id
+        
+        override fun areContentsTheSame(oldItem: Workout, newItem: Workout) = 
+            oldItem == newItem
+    }
+}
+
+// WorkoutDetailActivity.kt - детали тренировки
+class WorkoutDetailActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityWorkoutDetailBinding
+    private lateinit var viewModel: WorkoutViewModel
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityWorkoutDetailBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        val workoutId = intent.getIntExtra("WORKOUT_ID", 0)
+        viewModel = ViewModelProvider(this)[WorkoutViewModel::class.java]
+        viewModel.loadWorkout(workoutId)
+
+        viewModel.currentExercise.observe(this) { exercise ->
+            exercise?.let {
+                binding.exerciseName.text = it.name
+                binding.exerciseDescription.text = it.description
+                startTimer(it.duration)
+            }
+        }
+    }
+
+    private fun startTimer(duration: Int) {
+        object : CountDownTimer(duration * 1000L, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                binding.timer.text = (millisUntilFinished / 1000).toString()
+            }
+
+            override fun onFinish() {
+                viewModel.nextExercise()
+            }
+        }.start()
+    }
+}
+
+// WorkoutViewModel.kt - ViewModel для управления состоянием
+class WorkoutViewModel : ViewModel() {
+    private lateinit var currentWorkout: Workout
+    private var currentExerciseIndex = 0
+
+    val currentExercise = MutableLiveData<Exercise?>()
+
+    fun loadWorkout(id: Int) {
+        currentWorkout = WorkoutRepository.getWorkouts().first { it.id == id }
+        currentExercise.value = currentWorkout.exercises.firstOrNull()
+    }
+
+    fun nextExercise() {
+        if (currentExerciseIndex < currentWorkout.exercises.size - 1) {
+            currentExerciseIndex++
+            currentExercise.value = currentWorkout.exercises[currentExerciseIndex]
+        } else {
+            currentExercise.value = null
+            // Тренировка завершена
+        }
+    }
+}
